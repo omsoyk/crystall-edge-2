@@ -4,7 +4,7 @@
   - BaseMob
   - MobCombat
   - CEMobDamageable
-  #- CEMobMagical
+  - CEMobMagical
   - CEMobTemperature
   - MobPolymorphable
   id: CEBaseMobSpecies
@@ -207,7 +207,6 @@
 - type: entity
   parent:
   - MobBloodstream
-  - MobRespirator
   - MobFlammable
   - CEMobStarving
   - CEBaseMobSpecies
