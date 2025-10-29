@@ -27,7 +27,5 @@ public sealed class CEClientPowerSystem : VisualizerSystem<CEEnergyLeakComponent
         {
             _light.StopLightBehaviour((uid, beh));
         }
-
-        //Todo: sprite
     }
 }
