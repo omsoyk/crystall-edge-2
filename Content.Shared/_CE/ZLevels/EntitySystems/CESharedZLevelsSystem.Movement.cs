@@ -6,7 +6,6 @@ using Content.Shared.Throwing;
 using JetBrains.Annotations;
 using Robust.Shared.Audio;
 using Robust.Shared.Map;
-using Robust.Shared.Map.Components;
 using Robust.Shared.Physics;
 using Robust.Shared.Physics.Components;
 
@@ -29,11 +28,11 @@ public abstract partial class CESharedZLevelsSystem
     /// </summary>
     private const float ImpactVelocityLimit = 4.0f;
 
-    private EntityQuery<CEZLevelHighgroundComponent> _highgroundQuery;
+    private EntityQuery<CEZLevelHighGroundComponent> _highgroundQuery;
 
     private void InitMovement()
     {
-        _highgroundQuery = GetEntityQuery<CEZLevelHighgroundComponent>();
+        _highgroundQuery = GetEntityQuery<CEZLevelHighGroundComponent>();
 
         SubscribeLocalEvent<DamageableComponent, CEZLevelHitEvent>(OnFallDamage);
         SubscribeLocalEvent<PhysicsComponent, CEZLevelHitEvent>(OnFallAreaImpact);
@@ -44,7 +43,7 @@ public abstract partial class CESharedZLevelsSystem
         var knockdownTime = MathF.Min(args.ImpactPower * 0.25f, 5f);
         _stun.TryKnockdown(ent.Owner, TimeSpan.FromSeconds(knockdownTime));
 
-        var damageType = Proto.Index<DamageTypePrototype>("Blunt");
+        var damageType = _proto.Index<DamageTypePrototype>("Blunt");
         var damageAmount = MathF.Pow(args.ImpactPower, 2);
 
         _damage.TryChangeDamage(ent.Owner, new DamageSpecifier(damageType, damageAmount));
@@ -65,7 +64,7 @@ public abstract partial class CESharedZLevelsSystem
             var knockdownTime = MathF.Min(args.ImpactPower * ent.Comp.Mass * 0.1f, 10f);
             _stun.TryKnockdown(victim, TimeSpan.FromSeconds(knockdownTime));
 
-            var damageType = Proto.Index<DamageTypePrototype>("Blunt");
+            var damageType = _proto.Index<DamageTypePrototype>("Blunt");
             var damageAmount = args.ImpactPower * ent.Comp.Mass * 0.25f;
 
             _damage.TryChangeDamage(victim, new DamageSpecifier(damageType, damageAmount));
@@ -83,9 +82,7 @@ public abstract partial class CESharedZLevelsSystem
                 continue;
 
             if (physics.BodyType == BodyType.Static || xform.ParentUid != xform.MapUid)
-            {
                 continue;
-            }
 
             var oldVelocity = zPhys.Velocity;
             var oldHeight = zPhys.LocalPosition;
@@ -174,9 +171,9 @@ public abstract partial class CESharedZLevelsSystem
             return maxFloors;
 
         var xform = Transform(target);
-        if (!ZMapQuery.TryComp(xform.MapUid, out var zMapComp))
+        if (!_zMapQuery.TryComp(xform.MapUid, out var zMapComp))
             return maxFloors;
-        if (!GridQuery.TryComp(xform.MapUid, out var mapGrid))
+        if (!_gridQuery.TryComp(xform.MapUid, out var mapGrid))
             return maxFloors;
 
         var worldPosI = _transform.GetGridOrMapTilePosition(target);
@@ -192,7 +189,7 @@ public abstract partial class CESharedZLevelsSystem
             {
                 if (!TryMapOffset((checkingMap.Owner, checkingMap.Comp), -floor, out var tempCheckingMap))
                     continue;
-                if (!GridQuery.TryComp(tempCheckingMap, out var tempCheckingGrid))
+                if (!_gridQuery.TryComp(tempCheckingMap, out var tempCheckingGrid))
                     continue;
 
                 checkingMap = tempCheckingMap.Value;
@@ -226,10 +223,7 @@ public abstract partial class CESharedZLevelsSystem
                     continue;
 
                 if (curve.Count == 1)
-                {
-                    var h = curve[0];
-                    return target.Comp.LocalPosition + floor - h;
-                }
+                    return target.Comp.LocalPosition + floor - curve[0];
 
                 var step = 1f / (curve.Count - 1);
                 var index = (int)(t / step);
@@ -259,6 +253,7 @@ public abstract partial class CESharedZLevelsSystem
     /// Checks whether there is a ceiling above the specified entity (tiles on the layer above).
     /// If there are no Z-levels above, false will be returned.
     /// </summary>
+    [PublicAPI]
     public bool HasRoof(EntityUid ent, Entity<CEZLevelMapComponent?>? map = null)
     {
         map ??= Transform(ent).MapUid;
@@ -269,7 +264,7 @@ public abstract partial class CESharedZLevelsSystem
         if (!TryMapUp(map.Value, out var mapAboveUid))
             return false;
 
-        if (!GridQuery.TryComp(mapAboveUid.Value, out var mapAboveGrid))
+        if (!_gridQuery.TryComp(mapAboveUid.Value, out var mapAboveGrid))
             return false;
 
         if (_map.TryGetTileRef(mapAboveUid.Value, mapAboveGrid, _transform.GetWorldPosition(ent), out var tileRef) &&
@@ -277,6 +272,32 @@ public abstract partial class CESharedZLevelsSystem
             return true;
 
         return false;
+    }
+
+    /// <summary>
+    /// Sets the vertical velocity for the entity. Positive values make the entity fly upward. Negative values make it fly downward.
+    /// </summary>
+    [PublicAPI]
+    public void SetZVelocity(Entity<CEZPhysicsComponent?> ent, float newVelocity)
+    {
+        if (!Resolve(ent.Owner, ref ent.Comp))
+            return;
+
+        ent.Comp.Velocity = newVelocity;
+        DirtyField(ent, ent.Comp, nameof(CEZPhysicsComponent.Velocity));
+    }
+
+    /// <summary>
+    /// Add the vertical velocity for the entity. Positive values make the entity fly upward. Negative values make it fly downward.
+    /// </summary>
+    [PublicAPI]
+    public void AddZVelocity(Entity<CEZPhysicsComponent?> ent, float newVelocity)
+    {
+        if (!Resolve(ent.Owner, ref ent.Comp, false))
+            return;
+
+        ent.Comp.Velocity += newVelocity;
+        DirtyField(ent, ent.Comp, nameof(CEZPhysicsComponent.Velocity));
     }
 
     [PublicAPI]
@@ -290,7 +311,7 @@ public abstract partial class CESharedZLevelsSystem
         if (!TryMapOffset(map.Value, offset, out var targetMap))
             return false;
 
-        if (!MapQuery.TryComp(targetMap, out var targetMapComp))
+        if (!_mapQuery.TryComp(targetMap, out var targetMapComp))
             return false;
 
 
@@ -346,7 +367,7 @@ public sealed class CEZLevelMoveEvent(int offset) : EntityEventArgs
 /// <summary>
 /// Is triggered when an entity falls to the lower z-levels under the force of gravity
 /// </summary>
-public sealed class CEZLevelFallEvent() : EntityEventArgs;
+public sealed class CEZLevelFallEvent : EntityEventArgs;
 
 /// <summary>
 /// It is called on an entity when it hits the floor or ceiling with force.
